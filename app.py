@@ -6,73 +6,78 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 import matplotlib.pyplot as plt
 
-# Set page config
-st.set_page_config(page_title="Stock Price Prediction with LSTM", layout="wide")
+# Streamlit page setup
+st.set_page_config(page_title="📈 Stock Price Prediction with LSTM", layout="wide")
 st.title("📈 Stock Price Prediction using LSTM")
 
-# Load hardcoded CSV file
-file_path = "cleaned_air_quality.csv"  # Change this to your desired file name
-df = pd.read_csv(file_path, index_col=0, parse_dates=True)
+# File uploader
+uploaded_file = st.file_uploader("Upload your stock data CSV file", type=["csv"])
 
-# Preview dataset
-st.subheader("📊 Preview of Dataset")
-st.dataframe(df.head())
+if uploaded_file is not None:
+    # Load the dataset
+    df = pd.read_csv(uploaded_file, index_col=0, parse_dates=True)
 
-# Normalize
-scaler = MinMaxScaler()
-scaled_data = scaler.fit_transform(df)
+    st.subheader("📊 Preview of Uploaded Data")
+    st.dataframe(df.head())
 
-# Sequence length input
-seq_length = st.slider("Select sequence length", 5, 50, 10)
-train_size = int(len(scaled_data) * 0.8)
+    # Normalize data
+    scaler = MinMaxScaler()
+    scaled_data = scaler.fit_transform(df)
 
-# Sequence creation
-def create_sequences(data, seq_length):
-    X, y = [], []
-    for i in range(len(data) - seq_length):
-        X.append(data[i:(i + seq_length)])
-        y.append(data[i + seq_length])
-    return np.array(X), np.array(y)
+    # Choose sequence length
+    seq_length = st.slider("🔢 Select Sequence Length", 5, 50, 10)
+    train_size = int(len(scaled_data) * 0.8)
 
-# Model builder
-def build_model(seq_length, n_features):
-    model = Sequential([
-        LSTM(100, return_sequences=True, input_shape=(seq_length, n_features)),
-        Dropout(0.2),
-        LSTM(50),
-        Dropout(0.2),
-        Dense(n_features)
-    ])
-    model.compile(optimizer='adam', loss='mse')
-    return model
+    # Create sequences
+    def create_sequences(data, seq_length):
+        X, y = [], []
+        for i in range(len(data) - seq_length):
+            X.append(data[i:(i + seq_length)])
+            y.append(data[i + seq_length])
+        return np.array(X), np.array(y)
 
-# Split and create sequences
-train_data = scaled_data[:train_size]
-test_data = scaled_data[train_size:]
-X_train, y_train = create_sequences(train_data, seq_length)
-X_test, y_test = create_sequences(test_data, seq_length)
+    train_data = scaled_data[:train_size]
+    test_data = scaled_data[train_size:]
 
-# Model training
-st.info("🧠 Training the LSTM model... This may take a few minutes.")
-model = build_model(seq_length, df.shape[1])
-model.fit(X_train, y_train, epochs=50, batch_size=32, validation_split=0.1, verbose=0)
-st.success("✅ Model training complete!")
+    X_train, y_train = create_sequences(train_data, seq_length)
+    X_test, y_test = create_sequences(test_data, seq_length)
 
-# Predictions
-predictions = model.predict(X_test)
-predictions = scaler.inverse_transform(predictions)
-y_test = scaler.inverse_transform(y_test)
+    # Build the LSTM model
+    def build_model(seq_length, n_features):
+        model = Sequential([
+            LSTM(100, return_sequences=True, input_shape=(seq_length, n_features)),
+            Dropout(0.2),
+            LSTM(50),
+            Dropout(0.2),
+            Dense(n_features)
+        ])
+        model.compile(optimizer='adam', loss='mse')
+        return model
 
-# Plot results
-st.subheader("📈 Predicted vs Actual Prices")
-fig, axs = plt.subplots(nrows=(len(df.columns)+1)//2, ncols=2, figsize=(16, 10))
-axs = axs.flatten()
+    # Train the model
+    st.info("🧠 Training the LSTM model... Please wait.")
+    model = build_model(seq_length, df.shape[1])
+    model.fit(X_train, y_train, epochs=50, batch_size=32, validation_split=0.1, verbose=0)
+    st.success("✅ Model training complete!")
 
-for i, stock in enumerate(df.columns):
-    axs[i].plot(y_test[:, i], label='Actual')
-    axs[i].plot(predictions[:, i], label='Predicted')
-    axs[i].set_title(f'{stock} Prediction')
-    axs[i].legend()
+    # Predict
+    predictions = model.predict(X_test)
+    predictions = scaler.inverse_transform(predictions)
+    y_test_inv = scaler.inverse_transform(y_test)
 
-plt.tight_layout()
-st.pyplot(fig)
+    # Plotting
+    st.subheader("📉 Actual vs Predicted Prices")
+    fig, axs = plt.subplots(nrows=(len(df.columns) + 1) // 2, ncols=2, figsize=(16, 10))
+    axs = axs.flatten()
+
+    for i, column in enumerate(df.columns):
+        axs[i].plot(y_test_inv[:, i], label='Actual')
+        axs[i].plot(predictions[:, i], label='Predicted')
+        axs[i].set_title(f"{column} Prediction")
+        axs[i].legend()
+
+    plt.tight_layout()
+    st.pyplot(fig)
+
+else:
+    st.warning("⚠️ Please upload a CSV file to continue.")
