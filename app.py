@@ -6,78 +6,77 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 import matplotlib.pyplot as plt
 
-# Streamlit page setup
+# Streamlit setup
 st.set_page_config(page_title="📈 Stock Price Prediction with LSTM", layout="wide")
 st.title("📈 Stock Price Prediction using LSTM")
 
-# File uploader
-uploaded_file = st.file_uploader("Upload your stock data CSV file", type=["csv"])
+# ✅ Directly load the dataset (no file upload)
+file_path = "cleaned_air_quality.csv"  # Replace with your CSV name
+try:
+    df = pd.read_csv(file_path, index_col=0, parse_dates=True)
+    st.success(f"✅ Loaded dataset: {file_path}")
+except FileNotFoundError:
+    st.error(f"❌ File not found: {file_path}")
+    st.stop()
 
-if uploaded_file is not None:
-    # Load the dataset
-    df = pd.read_csv(uploaded_file, index_col=0, parse_dates=True)
+# Show data
+st.subheader("📊 Preview of Dataset")
+st.dataframe(df.head())
 
-    st.subheader("📊 Preview of Uploaded Data")
-    st.dataframe(df.head())
+# Normalize
+scaler = MinMaxScaler()
+scaled_data = scaler.fit_transform(df)
 
-    # Normalize data
-    scaler = MinMaxScaler()
-    scaled_data = scaler.fit_transform(df)
+# Slider for sequence length
+seq_length = st.slider("🔢 Select Sequence Length", 5, 50, 10)
+train_size = int(len(scaled_data) * 0.8)
 
-    # Choose sequence length
-    seq_length = st.slider("🔢 Select Sequence Length", 5, 50, 10)
-    train_size = int(len(scaled_data) * 0.8)
+# Create sequences
+def create_sequences(data, seq_length):
+    X, y = [], []
+    for i in range(len(data) - seq_length):
+        X.append(data[i:(i + seq_length)])
+        y.append(data[i + seq_length])
+    return np.array(X), np.array(y)
 
-    # Create sequences
-    def create_sequences(data, seq_length):
-        X, y = [], []
-        for i in range(len(data) - seq_length):
-            X.append(data[i:(i + seq_length)])
-            y.append(data[i + seq_length])
-        return np.array(X), np.array(y)
+train_data = scaled_data[:train_size]
+test_data = scaled_data[train_size:]
+X_train, y_train = create_sequences(train_data, seq_length)
+X_test, y_test = create_sequences(test_data, seq_length)
 
-    train_data = scaled_data[:train_size]
-    test_data = scaled_data[train_size:]
+# Build LSTM model
+def build_model(seq_length, n_features):
+    model = Sequential([
+        LSTM(100, return_sequences=True, input_shape=(seq_length, n_features)),
+        Dropout(0.2),
+        LSTM(50),
+        Dropout(0.2),
+        Dense(n_features)
+    ])
+    model.compile(optimizer='adam', loss='mse')
+    return model
 
-    X_train, y_train = create_sequences(train_data, seq_length)
-    X_test, y_test = create_sequences(test_data, seq_length)
+# Train the model
+st.info("🧠 Training the LSTM model... Please wait.")
+model = build_model(seq_length, df.shape[1])
+model.fit(X_train, y_train, epochs=50, batch_size=32, validation_split=0.1, verbose=0)
+st.success("✅ Model training complete!")
 
-    # Build the LSTM model
-    def build_model(seq_length, n_features):
-        model = Sequential([
-            LSTM(100, return_sequences=True, input_shape=(seq_length, n_features)),
-            Dropout(0.2),
-            LSTM(50),
-            Dropout(0.2),
-            Dense(n_features)
-        ])
-        model.compile(optimizer='adam', loss='mse')
-        return model
+# Predict and inverse transform
+predictions = model.predict(X_test)
+predictions = scaler.inverse_transform(predictions)
+y_test_inv = scaler.inverse_transform(y_test)
 
-    # Train the model
-    st.info("🧠 Training the LSTM model... Please wait.")
-    model = build_model(seq_length, df.shape[1])
-    model.fit(X_train, y_train, epochs=50, batch_size=32, validation_split=0.1, verbose=0)
-    st.success("✅ Model training complete!")
+# Plot predictions
+st.subheader("📉 Actual vs Predicted Prices")
+fig, axs = plt.subplots(nrows=(len(df.columns) + 1) // 2, ncols=2, figsize=(16, 10))
+axs = axs.flatten()
 
-    # Predict
-    predictions = model.predict(X_test)
-    predictions = scaler.inverse_transform(predictions)
-    y_test_inv = scaler.inverse_transform(y_test)
+for i, column in enumerate(df.columns):
+    axs[i].plot(y_test_inv[:, i], label='Actual')
+    axs[i].plot(predictions[:, i], label='Predicted')
+    axs[i].set_title(f"{column} Prediction")
+    axs[i].legend()
 
-    # Plotting
-    st.subheader("📉 Actual vs Predicted Prices")
-    fig, axs = plt.subplots(nrows=(len(df.columns) + 1) // 2, ncols=2, figsize=(16, 10))
-    axs = axs.flatten()
-
-    for i, column in enumerate(df.columns):
-        axs[i].plot(y_test_inv[:, i], label='Actual')
-        axs[i].plot(predictions[:, i], label='Predicted')
-        axs[i].set_title(f"{column} Prediction")
-        axs[i].legend()
-
-    plt.tight_layout()
-    st.pyplot(fig)
-
-else:
-    st.warning("⚠️ Please upload a CSV file to continue.")
+plt.tight_layout()
+st.pyplot(fig)
